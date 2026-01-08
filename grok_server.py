@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import requests
 from fastapi import FastAPI
 from dotenv import load_dotenv
@@ -10,7 +11,6 @@ XAI_API_KEY = os.getenv("XAI_API_KEY")
 
 app = FastAPI()
 
-# память по игрокам
 PLAYER_MEMORY = {}
 
 def ask_grok(system_prompt, user_prompt):
@@ -40,58 +40,50 @@ def ask_grok(system_prompt, user_prompt):
 
 @app.post("/observe")
 def observe(data: dict):
-    """
-    data приходит из Roblox
-    """
     user_id = str(data.get("user_id"))
     username = data.get("username", "Игрок")
-    signal = data.get("signal")
-    meta = data.get("meta", {})
+    signals = data.get("signals", [])
 
     memory = PLAYER_MEMORY.setdefault(user_id, {
         "signals": [],
         "last_reply": 0
     })
 
-    memory["signals"].append(signal)
-    memory["signals"] = memory["signals"][-10:]  # храним последние 10
+    for s in signals:
+        memory["signals"].append(s)
 
-    # антиспам — не чаще раза в 6 сек
+    memory["signals"] = memory["signals"][-8:]
+
     now = time.time()
     if now - memory["last_reply"] < 6:
         return {"should_speak": False}
 
     system_prompt = (
         "Ты наблюдатель в психологической игре.\n"
-        "Ты знаешь, что игрок — человек перед экраном.\n"
-        "Ты НЕ NPC.\n"
-        "Ты анализируешь поведение, а не отдельные действия.\n"
-        "Ты можешь МОЛЧАТЬ.\n"
-        "Отвечай коротко.\n"
-        "Иногда делай выводы.\n"
-        "Ломай четвёртую стену.\n"
-        "Верни JSON."
+        "Ты знаешь, что игрок — человек.\n"
+        "Ты ломаешь четвёртую стену.\n"
+        "Ты можешь молчать.\n"
+        "Отвечай кратко.\n"
+        "Верни СТРОГО JSON."
     )
 
     user_prompt = f"""
 Игрок: {username}
-Последний сигнал: {signal}
 Последние сигналы: {memory['signals']}
-Доп. данные: {meta}
 
 Ответь строго JSON:
 {{
   "should_speak": true/false,
-  "intent": "pressure | irony | neutral | silence",
-  "comment": "короткая фраза ИЛИ пусто"
+  "intent": "irony | pressure | neutral | silence",
+  "comment": "короткая фраза или пусто"
 }}
 """
 
     try:
-        result = ask_grok(system_prompt, user_prompt)
-    except Exception as e:
+        raw = ask_grok(system_prompt, user_prompt)
+        parsed = json.loads(raw)
+    except Exception:
         return {"should_speak": False}
 
     memory["last_reply"] = now
-
-    return result
+    return parsed
