@@ -1,1 +1,4 @@
-pip install fastapi uvicorn requests python-dotenv
+fastapi==0.110.0
+uvicorn==0.29.0
+requests==2.32.3
+python-dotenv==1.0.1
